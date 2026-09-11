@@ -106,23 +106,27 @@ The demo warehouse has **610 tables and 8,079 columns, about 48,500 tokens** of 
 
 `scripts/eval.py` scores **execution accuracy**: the agent's result set must match the hand-verified gold result (numeric columns within tolerance, row order and label formatting ignored), plus behaviour cases where the correct outcome is *not* running a query (a destructive request, prompt injection, an off-topic question).
 
-Results with `openai/gpt-oss-120b` on Groq's free tier, against the 610-table warehouse:
+Results on Groq's free tier, against the 610-table warehouse:
 
-| Metric | First run | After fixing what the eval found |
-|---|---|---|
-| Execution accuracy (SQL cases) | 15 / 21 | **20 / 21** |
-| Behaviour cases (refuse / clarify) | 3 / 3 | **3 / 3** |
-| Retrieval recall (gold tables in prompt) | 0.94 | **1.00** |
-| Hallucinated tables or columns that reached the warehouse | 0 | **0** |
-| Avg schema tokens in prompt | 630 | **1,040** (vs ~49,000 for the full schema) |
+| Metric | Run 1 (gpt-oss-120b) | Run 2 (gpt-oss-120b) | **Final code (qwen3.8-27b)** |
+|---|---|---|---|
+| Execution accuracy (SQL cases) | 15 / 21 | 20 / 21 | **21 / 21** |
+| First-try accuracy | 15 / 21 | 20 / 21 | **21 / 21** |
+| Behaviour cases (refuse / clarify) | 3 / 3 | 3 / 3 | **3 / 3** |
+| Retrieval recall (gold tables in prompt) | 0.94 | 1.00 | **1.00** |
+| Hallucinated tables/columns that reached the warehouse | 0 | 0 | **0** |
+| Avg schema tokens in prompt | 630 | 1,040 | **1,040** (vs ~49,000 for the full schema) |
 
-In the first run, 4 of the 6 misses were the model *asking for clarification* because it lacked context, not guessing. That's the intended failure mode. The eval pointed to four general fixes:
-- sample every label in small dimension tables (`'Hosting Costs'`, `'Engineering'`);
-- stop BM25 from burying wide tables (70 CRM columns made `dim_customer` lose on "new customers");
-- add metric synonyms ("exceeded their budget");
-- add a rule that refunds and payments are dated by their own date column, not the invoice's period.
+Each run fixed what the previous one found, and each fix has a regression test:
 
-Each fix has a regression test. Average latency (~14s) is dominated by Groq free-tier rate-limit backoff during the eval; single questions take about 5s.
+- **Run 1 → 2.** 4 of the 6 misses were the model *asking for clarification* because it lacked context, not guessing. That's the intended failure mode. Four fixes followed:
+  - sample every label in small dimension tables (`'Hosting Costs'`, `'Engineering'`);
+  - stop BM25 from burying wide tables (70 CRM columns made `dim_customer` lose on "new customers");
+  - add metric synonyms ("exceeded their budget");
+  - add a rule that refunds and payments are dated by their own date column, not the invoice's period.
+- **Run 2 → final.** For "last quarter", the model derived the current period *inside the SQL* and filtered it on `is_closed`, which returned NULL. Relative dates are now resolved in code (`date_context`) and passed to the writer as literal `fiscal_year` / `fiscal_quarter` values.
+
+The final run used `qwen/qwen3.8-27b` because gpt-oss-120b's free daily token quota was exhausted by the earlier runs (see limitations); the date fix is therefore verified on qwen, not yet re-verified on gpt-oss. The repair loop didn't fire in these runs (both models got every query right first time); it's exercised by the scripted-LLM tests in [test_graph.py](tests/test_graph.py). Average eval latency (~15s) is dominated by free-tier per-minute rate limiting; a single question takes about 5s.
 
 ## Deployment (Slack + AWS Lambda, free tier)
 
@@ -171,3 +175,4 @@ tests/           75 offline tests
 - The Snowflake connector, the SAM deployment and the S3 catalog path follow the documented APIs but were not run against real Snowflake or AWS accounts; everything else was tested end to end locally.
 - The demo data is synthetic (seeded, reproducible). The planted stories (a Marketing overspend in FY2027-Q1, Engineering hosting up 40% from May 2026) are there so the reports have something to find.
 - The eval set is small (24 cases) and compares numeric columns only; treat its numbers as a regression signal, not a benchmark.
+- **Groq free-tier quotas are per model, per day** (at the time of writing, 200,000 tokens per day and 8,000 tokens per minute for `openai/gpt-oss-120b`). That's roughly two full eval runs per model per day. When a quota is exhausted, Groq returns a `retry-after` of many minutes; the client fails fast with a clear message rather than sleeping (an early eval hung for over an hour on exactly this). To keep going, switch `GROQ_MODEL` (each model has its own quota, e.g. `qwen/qwen3.8-27b`) or use local Ollama.
