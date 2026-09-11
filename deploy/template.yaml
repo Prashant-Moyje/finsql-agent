@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: FinSQL - agentic text-to-SQL for finance, served to Slack.
+
+# Everything here fits the AWS free tier: Lambda (1M requests/month),
+# Function URL (no API Gateway), SSM standard parameters, CloudWatch Logs.
+# Build & deploy:  bash deploy/build.sh && sam deploy --guided -t deploy/template.yaml
+
+Parameters:
+  Warehouse:
+    Type: String
+    Default: duckdb
+    AllowedValues: [duckdb, snowflake]
+  LlmProvider:
+    Type: String
+    Default: groq
+  CatalogPath:
+    Type: String
+    Default: context_store/catalog.json
+    Description: Bundled path, or s3://bucket/key written by the nightly schema pipeline
+
+Resources:
+  FinSqlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: finsql
+      CodeUri: ../build/
+      Handler: finsql.slack_app.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      MemorySize: 1024
+      Timeout: 120  # the lazy (async) invocation runs the whole agent
+      Environment:
+        Variables:
+          SSM_PREFIX: /finsql/  # secrets are read from SSM at cold start
+          WAREHOUSE: !Ref Warehouse
+          LLM_PROVIDER: !Ref LlmProvider
+          CATALOG_PATH: !Ref CatalogPath
+          DUCKDB_PATH: /var/task/data/finance.duckdb
+          HOME: /tmp
+      FunctionUrlConfig:
+        AuthType: NONE  # Slack can't sign AWS requests; Bolt verifies Slack's signature on every call
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParametersByPath
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/finsql/*
+            - Effect: Allow
+              Action: kms:Decrypt  # SecureString parameters use the free AWS-managed key
+              Resource: "*"
+              Condition:
+                StringEquals:
+                  kms:ViaService: !Sub ssm.${AWS::Region}.amazonaws.com
+            - Effect: Allow
+              Action: lambda:InvokeFunction  # Bolt lazy listeners re-invoke this function
+              Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:finsql
+            - Effect: Allow
+              Action: s3:GetObject
+              Resource: arn:aws:s3:::*/finsql/*
+
+  FinSqlLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/finsql
+      RetentionInDays: 30  # audit trail; bounded to stay inside the free tier
+
+Outputs:
+  SlackRequestUrl:
+    Description: Paste into the Slack app manifest (slash command + event subscription URL)
+    Value: !GetAtt FinSqlFunctionUrl.FunctionUrl
