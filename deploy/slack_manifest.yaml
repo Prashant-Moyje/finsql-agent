@@ -1,0 +1,34 @@
+# Create the Slack app from this manifest: api.slack.com/apps -> Create New App
+# -> From a manifest. Replace YOUR_FUNCTION_URL with the Lambda Function URL
+# printed by `sam deploy` (for local Socket Mode, leave it and enable Socket Mode).
+display_information:
+  name: FinSQL
+  description: Ask finance data questions in plain English
+  background_color: "#1f3a5f"
+features:
+  bot_user:
+    display_name: FinSQL
+    always_online: true
+  slash_commands:
+    - command: /finsql
+      url: https://YOUR_FUNCTION_URL/
+      description: Ask a question about finance data
+      usage_hint: What was net revenue by region last quarter?
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - commands
+      - app_mentions:read
+      - chat:write
+      - files:write
+settings:
+  event_subscriptions:
+    request_url: https://YOUR_FUNCTION_URL/
+    bot_events:
+      - app_mention
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

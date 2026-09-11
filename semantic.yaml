@@ -1,0 +1,143 @@
+# Semantic layer: the business knowledge that isn't in the warehouse metadata.
+# The schema pipeline merges this with the extracted schema into the context
+# store. Finance owns this file; engineers don't have to be in the loop to add
+# a metric definition.
+
+# Only these schemas are visible to the agent at all.
+include_schemas: [main]          # Snowflake: e.g. [REPORTING]
+
+# Tables matching these patterns never enter the catalog, so the agent can't
+# see or query them (staging, scratch, backups).
+exclude_tables: ["stg_*", "tmp_*", "_*"]
+
+# Fiscal year start month (4 = April). Fiscal years are named by the calendar
+# year they end in. Used to tell the writer which fiscal quarter "today" is.
+fiscal_year_start_month: 4
+
+# Hard rules injected into every SQL-writer prompt.
+rules:
+  - "Fiscal year starts April 1 and is named by the calendar year it ends in: FY2026 = 2025-04-01 to 2026-03-31. For fiscal years/quarters join dim_fiscal_period on period_id and filter fiscal_year / fiscal_quarter; never use calendar YEAR() for fiscal questions."
+  - "Revenue figures always exclude invoices with status = 'void'. Tax (tax_amount) is never revenue."
+  - "Only expenses with approval_status = 'approved' count as actual spend."
+  - "Date every event by its own date: refunds by fct_refunds.refund_date, payments by fct_payments.payment_date. Those tables have no period_id, so for fiscal filters join dim_fiscal_period ON <date> BETWEEN period_start AND period_end; never use the related invoice's period. Invoices, expenses and budget use their own period_id."
+  - "All amounts are USD. Round money to 2 decimals."
+  - "Relative dates ('last quarter', 'this year', 'YTD') are fiscal unless the user says 'calendar'; use the literal fiscal_year / fiscal_quarter values given under TODAY. Do not filter on dim_fiscal_period.is_closed unless the user asks about closed or final periods."
+
+tables:
+  fct_invoices:
+    grain: one row per customer invoice
+    synonyms: [revenue, sales, billing, bookings, invoice, receivable, AR, top line]
+  fct_payments:
+    grain: one row per payment received (an invoice can have several)
+    synonyms: [collections, cash received, receipts, paid]
+  fct_refunds:
+    grain: one row per refund
+    synonyms: [refund, credit note, chargeback, returns]
+  fct_expenses:
+    grain: one row per spend transaction
+    synonyms: [spend, spending, cost, costs, expense, opex, payroll, travel, burn, vendor spend, cogs]
+  fct_budget:
+    grain: one row per department x account x month
+    synonyms: [budget, plan, forecast, variance, overspend, underspend]
+  dim_fiscal_period:
+    grain: one row per calendar month
+    synonyms: [fiscal year, quarter, FY, month, period, YTD]
+  dim_customer:
+    grain: one row per customer
+    synonyms: [client, account, customer, segment, enterprise, SMB, region, signup, signed up, new customers, acquired]
+  dim_department:
+    grain: one row per department
+    synonyms: [team, cost center, department, division]
+  dim_account:
+    grain: one row per GL account
+    synonyms: [GL, general ledger, account type, category, chart of accounts, opex, cogs]
+  dim_vendor:
+    grain: one row per supplier
+    synonyms: [supplier, vendor, payee]
+
+# Joins that aren't declared as foreign keys in the warehouse (common for
+# Snowflake views). Format: child_table.column -> parent_table.column
+relationships: []
+
+# Metric definitions: the single source of truth for what a number means.
+metrics:
+  - name: gross_revenue
+    synonyms: [gross revenue, gross sales, billings]
+    tables: [fct_invoices]
+    definition: "SUM(fct_invoices.gross_amount) WHERE status <> 'void'"
+  - name: net_revenue
+    synonyms: [revenue, net revenue, net sales, sales, top line]
+    tables: [fct_invoices]
+    definition: "SUM(fct_invoices.gross_amount - fct_invoices.discount_amount) WHERE status <> 'void'. Attributed to the invoice's period_id. This is the default meaning of 'revenue'."
+  - name: refunds
+    synonyms: [refunds, refunded, credit notes]
+    tables: [fct_refunds]
+    definition: "SUM(fct_refunds.amount), dated by fct_refunds.refund_date (not the invoice's period). No join to fct_invoices is needed unless the question asks about customers or invoices."
+  - name: cash_collected
+    synonyms: [cash collected, collections, collected, payments received, cash received, receipts]
+    tables: [fct_payments]
+    definition: "SUM(fct_payments.amount), dated by fct_payments.payment_date (not the invoice's period)."
+  - name: accounts_receivable
+    synonyms: [AR, receivables, outstanding, unpaid, owed, balance due]
+    tables: [fct_invoices, fct_payments]
+    definition: "For invoices with status IN ('open','overdue'): SUM(gross_amount - discount_amount + tax_amount) minus payments already received on those invoices. Aggregate fct_payments per invoice_id in a subquery BEFORE joining, to avoid double counting."
+  - name: overdue_receivables
+    synonyms: [overdue, past due, late payments]
+    tables: [fct_invoices, fct_payments]
+    definition: "Same as accounts_receivable but only status = 'overdue'."
+  - name: operating_expenses
+    synonyms: [opex, operating expenses, spend, spending]
+    tables: [fct_expenses, dim_account]
+    definition: "SUM(fct_expenses.amount) WHERE approval_status = 'approved' AND dim_account.account_type = 'Operating Expense'."
+  - name: cogs
+    synonyms: [cogs, cost of goods sold, cost of revenue, hosting]
+    tables: [fct_expenses, dim_account]
+    definition: "SUM(fct_expenses.amount) WHERE approval_status = 'approved' AND dim_account.account_type = 'COGS'."
+  - name: gross_margin
+    synonyms: [gross margin, margin, gross profit]
+    tables: [fct_invoices, fct_expenses, dim_account]
+    definition: "(net_revenue - cogs) / net_revenue for the same periods. Compute each side in its own CTE grouped by period, then join."
+  - name: budget_variance
+    synonyms: [budget, variance, over budget, under budget, overspend, overspent, exceeded, budget vs actual]
+    tables: [fct_expenses, fct_budget]
+    definition: "actual approved spend - budget_amount, per department/account/period. Positive = over budget. Aggregate actuals and budget in separate CTEs grouped by the same keys, then join (never join the fact tables row-to-row)."
+
+# Verified question -> SQL pairs, retrieved as few-shot examples.
+examples:
+  - question: "Net revenue by month for FY2025"
+    sql: |
+      SELECT p.period_id, p.month_name, ROUND(SUM(i.gross_amount - i.discount_amount), 2) AS net_revenue
+      FROM fct_invoices i
+      JOIN dim_fiscal_period p ON p.period_id = i.period_id
+      WHERE i.status <> 'void' AND p.fiscal_year = 2025
+      GROUP BY p.period_id, p.month_name
+      ORDER BY p.period_id
+  - question: "Which departments were over budget in FY2026-Q2?"
+    sql: |
+      WITH actuals AS (
+        SELECT e.department_id, SUM(e.amount) AS actual
+        FROM fct_expenses e JOIN dim_fiscal_period p ON p.period_id = e.period_id
+        WHERE e.approval_status = 'approved' AND p.fiscal_year = 2026 AND p.fiscal_quarter = 2
+        GROUP BY e.department_id),
+      budget AS (
+        SELECT b.department_id, SUM(b.budget_amount) AS budget
+        FROM fct_budget b JOIN dim_fiscal_period p ON p.period_id = b.period_id
+        WHERE p.fiscal_year = 2026 AND p.fiscal_quarter = 2
+        GROUP BY b.department_id)
+      SELECT d.department_name, ROUND(a.actual, 2) AS actual, ROUND(b.budget, 2) AS budget,
+             ROUND(a.actual - b.budget, 2) AS variance
+      FROM actuals a JOIN budget b USING (department_id)
+      JOIN dim_department d USING (department_id)
+      WHERE a.actual > b.budget
+      ORDER BY variance DESC
+  - question: "Outstanding receivables per customer segment"
+    sql: |
+      WITH paid AS (SELECT invoice_id, SUM(amount) AS paid FROM fct_payments GROUP BY invoice_id)
+      SELECT c.segment,
+             ROUND(SUM(i.gross_amount - i.discount_amount + i.tax_amount - COALESCE(paid.paid, 0)), 2) AS outstanding
+      FROM fct_invoices i
+      JOIN dim_customer c ON c.customer_id = i.customer_id
+      LEFT JOIN paid ON paid.invoice_id = i.invoice_id
+      WHERE i.status IN ('open', 'overdue')
+      GROUP BY c.segment
+      ORDER BY outstanding DESC
