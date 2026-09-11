@@ -1,0 +1,6 @@
+# Normalise line endings in the repo; keep LF in shell scripts and CI files
+# so they run under bash / on Linux even when checked out on Windows.
+* text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
