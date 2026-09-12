@@ -108,14 +108,14 @@ The demo warehouse has **610 tables and 8,079 columns, about 48,500 tokens** of 
 
 Results on Groq's free tier, against the 610-table warehouse:
 
-| Metric | Run 1 (gpt-oss-120b) | Run 2 (gpt-oss-120b) | **Final code (qwen3.8-27b)** |
-|---|---|---|---|
-| Execution accuracy (SQL cases) | 15 / 21 | 20 / 21 | **21 / 21** |
-| First-try accuracy | 15 / 21 | 20 / 21 | **21 / 21** |
-| Behaviour cases (refuse / clarify) | 3 / 3 | 3 / 3 | **3 / 3** |
-| Retrieval recall (gold tables in prompt) | 0.94 | 1.00 | **1.00** |
-| Hallucinated tables/columns that reached the warehouse | 0 | 0 | **0** |
-| Avg schema tokens in prompt | 630 | 1,040 | **1,040** (vs ~49,000 for the full schema) |
+| Metric | Run 1 (gpt-oss-120b) | Run 2 (gpt-oss-120b) | **Final code (qwen3.8-27b)** | **Final code (gpt-oss-120b)** |
+|---|---|---|---|---|
+| Execution accuracy (SQL cases) | 15 / 21 | 20 / 21 | **21 / 21** | **20 / 21** |
+| First-try accuracy | 15 / 21 | 20 / 21 | **21 / 21** | **20 / 21** |
+| Behaviour cases (refuse / clarify) | 3 / 3 | 3 / 3 | **3 / 3** | **3 / 3** |
+| Retrieval recall (gold tables in prompt) | 0.94 | 1.00 | **1.00** | **1.00** |
+| Hallucinated tables/columns that reached the warehouse | 0 | 0 | **0** | **0** |
+| Avg schema tokens in prompt | 630 | 1,040 | **1,040** | **1,040** (vs ~49,000 for the full schema) |
 
 Each run fixed what the previous one found, and each fix has a regression test:
 
@@ -126,7 +126,9 @@ Each run fixed what the previous one found, and each fix has a regression test:
   - add a rule that refunds and payments are dated by their own date column, not the invoice's period.
 - **Run 2 → final.** For "last quarter", the model derived the current period *inside the SQL* and filtered it on `is_closed`, which returned NULL. Relative dates are now resolved in code (`date_context`) and passed to the writer as literal `fiscal_year` / `fiscal_quarter` values.
 
-The final run used `qwen/qwen3.8-27b` because gpt-oss-120b's free daily token quota was exhausted by the earlier runs (see limitations); the date fix is therefore verified on qwen, not yet re-verified on gpt-oss. The repair loop didn't fire in these runs (both models got every query right first time); it's exercised by the scripted-LLM tests in [test_graph.py](tests/test_graph.py). Average eval latency (~15s) is dominated by free-tier per-minute rate limiting; a single question takes about 5s.
+The final code was evaluated on both models. gpt-oss-120b's single miss (`refunds_by_reason`) was the model asking a clarifying question instead of writing SQL; re-running that question three times produced correct SQL each time, so it reflects run-to-run variance in hosted inference (Groq is not bit-deterministic even at temperature 0) rather than a missing-context gap. A "clarify" is the safe failure mode: no wrong number is ever reported.
+
+The repair loop didn't fire in these runs (both models wrote valid SQL first time); it's exercised by the scripted-LLM tests in [test_graph.py](tests/test_graph.py). Average eval latency (~15s) is dominated by free-tier per-minute rate limiting; a single question takes about 5s.
 
 ## Deployment (Slack + AWS Lambda, free tier)
 
