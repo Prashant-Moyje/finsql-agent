@@ -17,6 +17,14 @@ _Definitions: budget_variance = actual approved spend - budget_amount, aggregate
 
 The whole stack runs on free tiers: DuckDB or a Snowflake trial, Groq's free API or local Ollama, AWS Lambda's free tier, and a free Slack workspace.
 
+## Live demo
+
+A hosted demo runs the whole agent against the synthetic warehouse, on free tiers end to end (Streamlit Community Cloud + Groq): **[LIVE_DEMO_URL]**
+
+It seeds the 610-table DuckDB warehouse and runs the schema pipeline on first load (a few seconds), then answers questions live: the plain-English report, the validated SQL, the result table, and a trace showing how many schema tokens were sent versus the full schema. Ask it to delete something and watch it refuse.
+
+To deploy your own copy: push this repo to GitHub, then at [share.streamlit.io](https://share.streamlit.io) pick the repo with `streamlit_app.py` as the entry point, and add `GROQ_API_KEY` under *Advanced settings → Secrets* (free key from [console.groq.com](https://console.groq.com)).
+
 ## Architecture
 
 ```mermaid

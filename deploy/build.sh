@@ -8,9 +8,10 @@ rm -rf build && mkdir -p build/data
 cp -r finsql semantic.yaml context_store build/
 if [[ "${1:-}" == "--snowflake" ]]; then
   cp requirements-snowflake.txt build/requirements.txt
-  cp requirements.txt build/  # referenced by -r
+  cp requirements-lambda.txt build/requirements.txt.base  # referenced by -r
+  sed -i 's|-r requirements.txt|-r requirements.txt.base|' build/requirements.txt
 else
-  cp requirements.txt build/requirements.txt
+  cp requirements-lambda.txt build/requirements.txt  # no streamlit in the Lambda zip
   cp data/finance.duckdb build/data/  # demo warehouse, opened read-only
 fi
 echo "build/ ready. Next:"
