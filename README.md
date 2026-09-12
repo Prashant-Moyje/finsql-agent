@@ -28,11 +28,30 @@ _Definitions: budget_variance = actual approved spend - budget_amount, aggregate
 
 The whole stack runs on free tiers: DuckDB or a Snowflake trial, Groq's free API or local Ollama, AWS Lambda's free tier, and a free Slack workspace.
 
-## Live demo
+## Demo
 
-A hosted demo runs the whole agent against the synthetic warehouse, on free tiers end to end (Streamlit Community Cloud + Groq): **[LIVE_DEMO_URL]**
+`streamlit_app.py` runs the whole agent against the synthetic warehouse. It seeds the 610-table DuckDB warehouse and runs the schema pipeline on first load (about 10s), then answers questions live. Run it locally:
 
-It seeds the 610-table DuckDB warehouse and runs the schema pipeline on first load (a few seconds), then answers questions live: the plain-English report, the validated SQL, the result table, and a trace showing how many schema tokens were sent versus the full schema. Ask it to delete something and watch it refuse.
+```bash
+pip install -r requirements.txt          # then put GROQ_API_KEY in .env
+streamlit run streamlit_app.py
+```
+
+**The app.** The sidebar keeps the core problem in view: 610 tables and 8,079 columns, about 48,975 tokens of schema — far more than fits in a prompt.
+
+![FinSQL landing page](docs/screenshots/01-landing.png)
+
+**Asking a question.** "Which departments were over budget last quarter, and by how much?" — answered in 4 seconds, first attempt, sending 1,018 tokens of schema instead of 48,975. The report cites the metric definition it applied.
+
+![An answered question with report, metrics and result table](docs/screenshots/02-answer.png)
+
+**The SQL it ran, and how it got there.** Every answer shows the validated, row-limited SQL. Note `fiscal_year = 2027 AND fiscal_quarter = 1`: "last quarter" was resolved to literal fiscal values before the model saw it, and `approval_status = 'approved'` comes from the semantic layer, not the model's guesswork.
+
+![The generated SQL and the agent trace](docs/screenshots/03-sql-and-trace.png)
+
+**The guardrail.** "Delete all the void invoices" never becomes SQL. Here the writer asks what the user actually wants; had it produced a DELETE, the validator would have refused it outright and never retried. Either way, the read-only connection means no write could reach the warehouse.
+
+![The agent declining to delete data](docs/screenshots/04-guardrail.png)
 
 Deploy your own copy on either free host (both run the same `streamlit_app.py`; get a free Groq key at [console.groq.com](https://console.groq.com)):
 
@@ -199,4 +218,5 @@ tests/           75 offline tests
 - The Snowflake connector, the SAM deployment and the S3 catalog path follow the documented APIs but were not run against real Snowflake or AWS accounts; everything else was tested end to end locally.
 - The demo data is synthetic (seeded, reproducible). The planted stories (a Marketing overspend in FY2027-Q1, Engineering hosting up 40% from May 2026) are there so the reports have something to find.
 - The eval set is small (24 cases) and compares numeric columns only; treat its numbers as a regression signal, not a benchmark.
+- The demo runs locally; there's no hosted instance right now. Both free hosting paths are wired up and documented above — the screenshots come from the real app, captured by [scripts/capture_screenshots.py](scripts/capture_screenshots.py) driving headless Chrome, so they stay reproducible rather than hand-made.
 - **Groq free-tier quotas are per model, per day** (at the time of writing, 200,000 tokens per day and 8,000 tokens per minute for `openai/gpt-oss-120b`). That's roughly two full eval runs per model per day. When a quota is exhausted, Groq returns a `retry-after` of many minutes; the client fails fast with a clear message rather than sleeping (an early eval hung for over an hour on exactly this). To keep going, switch `GROQ_MODEL` (each model has its own quota, e.g. `qwen/qwen3.8-27b`) or use local Ollama.
