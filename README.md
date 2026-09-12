@@ -1,3 +1,14 @@
+---
+title: FinSQL - Text-to-SQL for Finance
+emoji: 📊
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+app_file: streamlit_app.py
+pinned: false
+license: mit
+---
+
 # FinSQL: Agentic Text-to-SQL for Financial Reporting
 
 Finance teams wait days for engineers to write ad-hoc queries. FinSQL lets them ask in Slack:
@@ -23,7 +34,10 @@ A hosted demo runs the whole agent against the synthetic warehouse, on free tier
 
 It seeds the 610-table DuckDB warehouse and runs the schema pipeline on first load (a few seconds), then answers questions live: the plain-English report, the validated SQL, the result table, and a trace showing how many schema tokens were sent versus the full schema. Ask it to delete something and watch it refuse.
 
-To deploy your own copy: push this repo to GitHub, then at [share.streamlit.io](https://share.streamlit.io) pick the repo with `streamlit_app.py` as the entry point, and add `GROQ_API_KEY` under *Advanced settings → Secrets* (free key from [console.groq.com](https://console.groq.com)).
+Deploy your own copy on either free host (both run the same `streamlit_app.py`; get a free Groq key at [console.groq.com](https://console.groq.com)):
+
+- **Hugging Face Spaces** — create a Space with the *Streamlit* SDK, push this repo to it (`git push hf main`), and add `GROQ_API_KEY` under *Settings → Variables and secrets*. The YAML front-matter at the top of this README is what tells the Space its SDK and entry file. 2 vCPU / 16 GB RAM; sleeps after 48h idle.
+- **Streamlit Community Cloud** — at [share.streamlit.io](https://share.streamlit.io) pick this GitHub repo with `streamlit_app.py` as the entry point, and add `GROQ_API_KEY` under *Advanced settings → Secrets*. Sleeps after ~7 days idle.
 
 ## Architecture
 
