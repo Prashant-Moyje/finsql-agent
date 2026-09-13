@@ -126,9 +126,11 @@ def result_table(columns: list[str], rows: list[tuple], limit: int = 25) -> str:
 
 
 def summarize(llm: LLM, question: str, columns: list[str], rows: list[tuple], truncated: bool,
-              metrics: list[dict]) -> str:
+              metrics: list[dict], date_ctx: str = "") -> str:
     defs = "\n".join(f"- {m['name']}: {m['definition']}" for m in metrics) or "- (none matched)"
-    user = (f"QUESTION: {question}\n\nMETRIC DEFINITIONS USED:\n{defs}\n\n"
+    # The same fiscal context the writer received: without it the summary
+    # mislabels periods ("Q4 budgets" for what the SQL filtered as FY2027-Q1).
+    user = (f"{date_ctx}\n\n" if date_ctx else "") + (f"QUESTION: {question}\n\nMETRIC DEFINITIONS USED:\n{defs}\n\n"
             f"ROW COUNT: {len(rows)}{' (truncated at the row limit)' if truncated else ''}\n\n"
             f"COLUMN STATS:\n{profile(columns, rows)}\n\nRESULT:\n{result_table(columns, rows)}")
     return llm.complete(SUMMARIZER_SYSTEM, user)
