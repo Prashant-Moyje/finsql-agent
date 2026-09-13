@@ -16,7 +16,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from . import config, guard
-from .agents import summarize, write_sql
+from .agents import date_context, summarize, write_sql
 from .llm import LLM
 from .retriever import Retrieval, retrieve
 from .warehouse import QueryError, Warehouse
@@ -97,7 +97,9 @@ def build_graph(llm: LLM, warehouse: Warehouse, catalog: dict, max_attempts: int
     def summarize_node(s: State) -> dict:
         if not with_summary:  # eval mode: SQL accuracy only, skip the second LLM call
             return {"report": "", "status": "answered"}
-        report = summarize(llm, s["question"], s["columns"], s["rows"], s["truncated"], s["retrieval"].metrics)
+        date_ctx = date_context(s.get("today") or date.today(), catalog.get("fiscal_year_start_month", 1))
+        report = summarize(llm, s["question"], s["columns"], s["rows"], s["truncated"],
+                           s["retrieval"].metrics, date_ctx)
         return {"report": report, "status": "answered"}
 
     @_traced("refuse")
