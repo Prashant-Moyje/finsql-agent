@@ -1,14 +1,3 @@
----
-title: FinSQL - Text-to-SQL for Finance
-emoji: 📊
-colorFrom: blue
-colorTo: indigo
-sdk: streamlit
-app_file: streamlit_app.py
-pinned: false
-license: mit
----
-
 # FinSQL: Agentic Text-to-SQL for Financial Reporting
 
 Finance teams wait days for engineers to write ad-hoc queries. FinSQL lets them ask in Slack:
@@ -53,9 +42,9 @@ streamlit run streamlit_app.py
 
 ![The agent declining to delete data](docs/screenshots/04-guardrail.png)
 
-Deploy your own copy on either free host (both run the same `streamlit_app.py`; get a free Groq key at [console.groq.com](https://console.groq.com)):
+Deploy your own copy on either free host (get a free Groq key at [console.groq.com](https://console.groq.com)):
 
-- **Hugging Face Spaces** — create a Space with the *Streamlit* SDK, push this repo to it (`git push hf main`), and add `GROQ_API_KEY` under *Settings → Variables and secrets*. The YAML front-matter at the top of this README is what tells the Space its SDK and entry file. 2 vCPU / 16 GB RAM; sleeps after 48h idle.
+- **Hugging Face Spaces** — create a Space with the *Gradio* SDK, run `bash scripts/make_hf_branch.sh`, then `git push hf hf-space:main --force`, and add `GROQ_API_KEY` under *Settings → Variables and secrets*. The script builds an `hf-space` branch that adds the Space's YAML front-matter (so it never clutters this README on GitHub), serves the Gradio UI in `app.py`, and drops the screenshots, which HF rejects outside Xet/LFS storage. Runs on ZeroGPU, since the app itself needs no GPU.
 - **Streamlit Community Cloud** — at [share.streamlit.io](https://share.streamlit.io) pick this GitHub repo with `streamlit_app.py` as the entry point, and add `GROQ_API_KEY` under *Advanced settings → Secrets*. Sleeps after ~7 days idle.
 
 ## Architecture
