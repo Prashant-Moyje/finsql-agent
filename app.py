@@ -11,6 +11,11 @@ import time
 from datetime import date
 from pathlib import Path
 
+try:
+    import spaces  # present on Hugging Face ZeroGPU hardware; import before gradio
+except ImportError:  # running locally
+    spaces = None
+
 import gradio as gr
 import pandas as pd
 
@@ -31,6 +36,19 @@ EXAMPLES = [
 STATUS_ICON = {"answered": "✅", "clarify": "🤔", "refused": "⛔", "failed": "⚠️"}
 
 _STATE: dict = {}
+
+
+def _gpu(fn):
+    return spaces.GPU(fn) if spaces else fn
+
+
+@_gpu
+def _zerogpu_startup_check():
+    """ZeroGPU refuses to start an app with no @spaces.GPU function. Nothing in
+    this app needs a GPU (the LLM runs on Groq, DuckDB is CPU-only), so this
+    no-op exists only to pass that check. It is never called, so it uses no
+    GPU quota."""
+    return None
 
 
 def _configure_env() -> None:
@@ -60,6 +78,10 @@ def bootstrap():
     from finsql.llm import get_llm
     from finsql.warehouse import DuckDBWarehouse
 
+    if os.environ.get("LLM_PROVIDER") == "groq" and not os.environ.get("GROQ_API_KEY"):
+        raise RuntimeError("GROQ_API_KEY is not set. On Hugging Face, add it under "
+                           "Settings -> Variables and secrets, then restart the Space.")
+
     wh = DuckDBWarehouse(str(db))  # read-only, external access disabled
     catalog = build_catalog(wh, load_semantic(os.environ["SEMANTIC_PATH"]))
     save_catalog(catalog, os.environ["CATALOG_PATH"])
@@ -68,7 +90,10 @@ def bootstrap():
 
 
 def warehouse_blurb() -> str:
-    _, catalog = bootstrap()
+    try:
+        _, catalog = bootstrap()
+    except Exception as e:
+        return f"⚠️ {e}"
     s = catalog["stats"]
     return (f"**The warehouse:** {s['tables']:,} tables · {s['columns']:,} columns · "
             f"~{s['full_schema_tokens']:,} tokens of schema — far more than fits in a prompt, so each "
@@ -84,9 +109,9 @@ def ask(question: str, asked: int):
         return (f"⚠️ Demo limit of {MAX_QUESTIONS} questions per session reached "
                 "(it runs on a free Groq quota). Reload the page to start over."), "", None, "", {}, asked
 
-    app, _ = bootstrap()
     t0 = time.perf_counter()
     try:
+        app, _ = bootstrap()
         out = app.invoke({"question": question, "user": "hf-demo", "today": DEMO_TODAY},
                          {"recursion_limit": 25})
     except Exception as e:  # rate limits, network, etc.
