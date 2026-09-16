@@ -1,18 +1,18 @@
-"""Capture README screenshots of the Streamlit demo with headless Chrome.
+"""Capture README screenshots from the live Hugging Face Space with headless Chrome.
 
-Start the app first:
-    streamlit run streamlit_app.py --server.port 8501 --server.headless true
-then:
-    python scripts/capture_screenshots.py
+    python scripts/capture_screenshots.py [--url https://huggingface.co/spaces/<user>/<space>]
 
-Screenshots are plain viewport captures (WYSIWYG). CDP's captureBeyondViewport
-composites inconsistently with Streamlit's fixed sidebar and can return a stale
-frame, so the window is simply made tall enough for the content instead.
+Shoots the huggingface.co Space page (header included), driving the Gradio app
+inside its iframe: the landing view, an answered question, the validated SQL,
+and the guardrail on a delete request. Each image is cropped to the content.
+Asks two real questions, so it uses a little of the Space's Groq quota.
 """
+import argparse
 import sys
 import time
 from pathlib import Path
 
+from PIL import Image
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
@@ -20,14 +20,10 @@ from selenium.webdriver.common.by import By
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "screenshots"
-URL = "http://localhost:8501"
-WIDTH, HEIGHT = 1560, 1700
+WIDTH, HEIGHT = 1500, 2400
 
-# Questions are asked via the example buttons: they set the question through
-# session state. Typing doesn't commit the value until Enter/blur, which would
-# leave the Ask button disabled.
-ANSWER_EXAMPLE = "Which departments were over budget last quarter"
-REFUSAL_EXAMPLE = "Delete all the void invoices"
+ANSWER_EXAMPLE = "Which departments were over budget"
+GUARDRAIL_EXAMPLE = "Delete all the void invoices"
 
 
 def wait_for(fn, timeout: float, what: str):
@@ -43,67 +39,62 @@ def wait_for(fn, timeout: float, what: str):
     raise TimeoutError(f"timed out waiting for {what}")
 
 
-def buttons(driver, text: str):
-    return driver.find_elements(By.XPATH, f"//button[.//p[contains(normalize-space(.), {text!r})]]")
+class Space:
+    def __init__(self, driver, url: str):
+        self.d = driver
+        self.d.get(url)
+        self.frame = wait_for(lambda: next((f for f in self.d.find_elements(By.TAG_NAME, "iframe")
+                                            if "hf.space" in (f.get_attribute("src") or "")), None),
+                              120, "the app iframe")
+        self.frame_top = self.frame.location["y"]
+        self.d.switch_to.frame(self.frame)
+        wait_for(lambda: self.d.find_elements(By.TAG_NAME, "textarea"), 240, "the app to load")
+        wait_for(lambda: "610 tables" in self.d.page_source, 240, "the warehouse summary")
+        time.sleep(3)
 
+    def button(self, prefix: str):
+        return wait_for(lambda: next((b for b in self.d.find_elements(By.TAG_NAME, "button")
+                                      if b.text.strip().startswith(prefix)), None), 30, f"button {prefix!r}")
 
-def busy(driver) -> bool:
-    return bool(driver.find_elements(By.CSS_SELECTOR, "[data-testid='stSpinner']"))
+    def click(self, prefix: str) -> None:
+        self.d.execute_script("arguments[0].click();", self.button(prefix))
+        time.sleep(1)
 
+    def meta(self) -> str:
+        els = self.d.find_elements(By.XPATH, "//*[contains(text(), 'schema tokens sent')]")
+        return els[0].text if els else ""
 
-def answered(driver) -> bool:
-    """Report heading plus metric tiles, and the spinner gone."""
-    return (bool(driver.find_elements(By.CSS_SELECTOR, "h4"))
-            and bool(driver.find_elements(By.CSS_SELECTOR, "[data-testid='stMetric']"))
-            and not busy(driver))
+    def ask_example(self, prefix: str, timeout: float = 180) -> None:
+        before = self.meta()
+        self.click(prefix)      # fills the question box
+        self.click("Ask")
+        wait_for(lambda: self.meta() and self.meta() != before, timeout, "the agent to answer")
+        time.sleep(3)
 
+    def content_bottom(self) -> int:
+        return int(self.d.execute_script(
+            "const els = [...document.querySelectorAll('*')].filter(e => e.textContent.includes('Synthetic data') "
+            "&& !e.children.length); return els.length ? els[els.length-1].getBoundingClientRect().bottom : "
+            "document.body.scrollHeight;"))
 
-def scroll_top(driver) -> None:
-    driver.execute_script(
-        "window.scrollTo(0, 0);"
-        "document.querySelectorAll('section.main, [data-testid=\"stAppViewContainer\"], "
-        "[data-testid=\"stMain\"]').forEach(el => el.scrollTop = 0);"
-    )
-    time.sleep(0.5)
-
-
-def shot(driver, name: str, scroll_to: str | None = None) -> None:
-    time.sleep(1.5)
-    if scroll_to:
-        for el in driver.find_elements(By.XPATH, f"//*[contains(text(), {scroll_to!r})]")[:1]:
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
-            time.sleep(1)
-    else:
-        scroll_top(driver)
-    path = OUT / name
-    driver.save_screenshot(str(path))
-    kb = path.stat().st_size // 1024
-    print(f"  {path.relative_to(ROOT)}  ({kb} KB)" + ("   <-- suspiciously small" if kb < 10 else ""))
-
-
-def ask_example(driver, example_text: str, timeout: float = 240) -> None:
-    scroll_top(driver)
-    wait_for(lambda: buttons(driver, example_text), 30, f"the {example_text!r} button")[0].click()
-    time.sleep(2)  # rerun: the question lands in the box and enables Ask
-    ask = wait_for(lambda: [b for b in buttons(driver, "Ask") if b.is_enabled()], 30, "Ask to enable")[0]
-    ask.click()
-    time.sleep(2)
-    wait_for(lambda: answered(driver), timeout, "the agent to answer")
-    time.sleep(3)  # let the result table and expanders finish rendering
-
-
-def expand(driver, label: str) -> bool:
-    for el in driver.find_elements(By.XPATH, f"//summary[contains(., {label!r})]"):
-        expanded = driver.execute_script("return arguments[0].parentElement.open === true;", el)
-        if not expanded:
-            driver.execute_script("arguments[0].click();", el)
-            time.sleep(2)
-        return bool(driver.execute_script("return arguments[0].parentElement.open === true;", el))
-    return False
+    def shot(self, name: str) -> None:
+        time.sleep(1.5)
+        bottom = min(self.frame_top + self.content_bottom() + 28, HEIGHT)
+        self.d.switch_to.default_content()
+        path = OUT / name
+        self.d.save_screenshot(str(path))
+        with Image.open(path) as img:
+            img.crop((0, 0, img.width, bottom)).save(path, optimize=True)
+        self.d.switch_to.frame(self.frame)
+        print(f"  {path.relative_to(ROOT)}  ({path.stat().st_size // 1024} KB, {bottom}px tall)")
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", default="https://huggingface.co/spaces/Prashantm99/finsql-agent")
+    args = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
+
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument(f"--window-size={WIDTH},{HEIGHT}")
@@ -111,22 +102,20 @@ def main() -> None:
     driver = webdriver.Chrome(options=options)
     try:
         driver.set_window_size(WIDTH, HEIGHT)
-        driver.get(URL)
-        print("waiting for the warehouse to seed and the catalog to build...")
-        wait_for(lambda: buttons(driver, "Net revenue by customer region"), 300, "the app to bootstrap")
-        time.sleep(3)
+        print(f"loading {args.url} ...")
+        space = Space(driver, args.url)
         print("capturing:")
-        shot(driver, "01-landing.png")
+        space.shot("01-landing.png")
 
-        ask_example(driver, ANSWER_EXAMPLE)
-        shot(driver, "02-answer.png")
+        space.ask_example(ANSWER_EXAMPLE)
+        space.shot("02-answer.png")
 
-        for label in ("SQL that ran", "How the agent got there"):
-            print(f"  expanded {label!r}: {expand(driver, label)}")
-        shot(driver, "03-sql-and-trace.png", scroll_to="SQL that ran")
+        space.click("SQL that ran")
+        space.shot("03-sql-and-trace.png")
+        space.click("SQL that ran")          # collapse again before the next question
 
-        ask_example(driver, REFUSAL_EXAMPLE)
-        shot(driver, "04-guardrail.png")
+        space.ask_example(GUARDRAIL_EXAMPLE)
+        space.shot("04-guardrail.png")
     finally:
         driver.quit()
 
