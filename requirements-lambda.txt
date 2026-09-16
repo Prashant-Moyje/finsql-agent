@@ -1,5 +1,5 @@
 # Runtime dependencies for the AWS Lambda zip: the agent only.
-# (The root requirements.txt also carries streamlit, for the hosted demo.)
+# (The root requirements.txt also carries gradio, for the demo app.)
 langgraph>=0.2
 sqlglot>=25
 duckdb>=1.1

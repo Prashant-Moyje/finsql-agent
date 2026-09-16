@@ -3,7 +3,7 @@
 #   - drops docs/screenshots (HF rejects binaries outside Xet/LFS storage)
 #   - prepends the Space's YAML front-matter (Gradio SDK, app.py), because
 #     ZeroGPU hardware is Gradio-only
-#   - swaps in the slim requirements (no streamlit/selenium)
+#   - swaps in the slim requirements (the Space SDK supplies gradio; no selenium)
 # Usage: bash scripts/make_hf_branch.sh   then: git push hf hf-space:main --force
 set -euo pipefail
 cd "$(dirname "$0")/.."

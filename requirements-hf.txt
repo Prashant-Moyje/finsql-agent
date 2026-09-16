@@ -1,5 +1,5 @@
 # Hugging Face Space (Gradio SDK supplies gradio itself).
-# Deliberately excludes streamlit/selenium: not needed to serve the demo.
+# Deliberately excludes selenium: not needed to serve the demo.
 langgraph>=0.2
 sqlglot>=25
 duckdb>=1.1

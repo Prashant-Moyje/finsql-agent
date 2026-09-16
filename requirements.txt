@@ -6,6 +6,5 @@ rapidfuzz>=3
 pyyaml>=6
 python-dotenv>=1
 slack_bolt>=1.18
-# Hosted demo (Streamlit Community Cloud reads this file from the repo root).
-# The Lambda package uses requirements-lambda.txt instead, to stay small.
-streamlit>=1.38
+# Demo UI (app.py). The Lambda package uses requirements-lambda.txt instead, to stay small.
+gradio>=5

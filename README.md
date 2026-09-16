@@ -4,7 +4,7 @@ Ask a finance question in Slack, get a plain-English report with the SQL and a C
 
 **Live demo:** [huggingface.co/spaces/Prashantm99/finsql-agent](https://huggingface.co/spaces/Prashantm99/finsql-agent) — ask it a question against the synthetic 610-table warehouse. It runs on a shared free Groq quota (8 questions per session), so it can run out on a busy day.
 
-**Status.** The local path (DuckDB + Groq or Ollama, CLI, Streamlit app, eval) is tested end to end and reproducible. The Snowflake connector, the SAM/Lambda deployment and the S3 catalog path are written against documented APIs but have **not** been run against live Snowflake or AWS accounts. Sections below flag which is which.
+**Status.** The local path (DuckDB + Groq or Ollama, CLI, Gradio app, eval) is tested end to end and reproducible. The Snowflake connector, the SAM/Lambda deployment and the S3 catalog path are written against documented APIs but have **not** been run against live Snowflake or AWS accounts. Sections below flag which is which.
 
 [Architecture](#architecture) · [Grounding](#grounding-stopping-the-llm-from-inventing-tables-and-columns) · [Security](#security-preventing-destructive-commands) · [Schema retrieval](#schema-retrieval-fitting-a-610-table-warehouse-into-a-prompt) · [Evaluation](#evaluation) · [Limitations](#limitations) · [Run it](#running-it) · [Deploy](#deployment-slack--aws-lambda)
 
@@ -165,11 +165,13 @@ Average eval latency (~15s) is dominated by free-tier per-minute rate limiting; 
 
 All paths need a free Groq key from [console.groq.com](https://console.groq.com), or local Ollama instead (`LLM_PROVIDER=ollama`, `OLLAMA_MODEL=<any chat-capable model you've pulled>`).
 
-### The Streamlit app (fastest way to see it work)
+### The demo app (fastest way to see it work)
+
+Try it live at [huggingface.co/spaces/Prashantm99/finsql-agent](https://huggingface.co/spaces/Prashantm99/finsql-agent), or run the same Gradio app locally:
 
 ```bash
 pip install -r requirements.txt     # then put GROQ_API_KEY in .env
-streamlit run streamlit_app.py
+python app.py                       # open http://localhost:7860
 ```
 
 Seeds the 610-table DuckDB warehouse and runs the schema pipeline on first load (about 10s), then answers questions live.
@@ -191,10 +193,7 @@ python scripts/eval.py            # execution-accuracy eval against eval/golden.
 
 ### Host your own copy
 
-Streamlit Community Cloud runs [`streamlit_app.py`](streamlit_app.py); Hugging Face runs the Gradio equivalent in [`app.py`](app.py).
-
 - **Hugging Face Spaces** — create a Space with the *Gradio* SDK, run `bash scripts/make_hf_branch.sh`, then `git push hf hf-space:main --force`, and add `GROQ_API_KEY` under *Settings → Variables and secrets*. The script builds an `hf-space` branch that adds the Space's YAML front-matter and drops the screenshots, which HF rejects outside Xet/LFS storage. Runs on ZeroGPU; the app itself needs no GPU.
-- **Streamlit Community Cloud** — at [share.streamlit.io](https://share.streamlit.io) pick this repo with `streamlit_app.py` as the entry point, and add `GROQ_API_KEY` under *Advanced settings → Secrets*. Sleeps after ~7 days idle.
 
 ## Deployment (Slack + AWS Lambda)
 
@@ -222,6 +221,7 @@ Slack requires a response within 3 seconds; an agent run takes 5–30. Bolt's la
 ## Project layout
 
 ```
+app.py           Gradio demo (the Hugging Face Space)
 finsql/
   config.py      settings (env / .env / SSM)
   warehouse.py   DuckDB + Snowflake connectors (read-only, timeouts, metadata extraction)

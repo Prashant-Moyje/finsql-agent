@@ -11,7 +11,7 @@ if [[ "${1:-}" == "--snowflake" ]]; then
   cp requirements-lambda.txt build/requirements.txt.base  # referenced by -r
   sed -i 's|-r requirements.txt|-r requirements.txt.base|' build/requirements.txt
 else
-  cp requirements-lambda.txt build/requirements.txt  # no streamlit in the Lambda zip
+  cp requirements-lambda.txt build/requirements.txt  # no demo UI in the Lambda zip
   cp data/finance.duckdb build/data/  # demo warehouse, opened read-only
 fi
 echo "build/ ready. Next:"

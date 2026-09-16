@@ -1,8 +1,8 @@
 """Gradio demo of the FinSQL agent, for Hugging Face Spaces.
 
-Mirrors streamlit_app.py: seeds the 610-table DuckDB warehouse and builds the
-context store on first load, then answers questions through Groq's free API.
-Gradio rather than Streamlit because ZeroGPU hardware requires the Gradio SDK.
+Seeds the 610-table DuckDB warehouse and builds the context store on first
+load, then answers questions through Groq's free API. Hosted on Hugging Face
+Spaces on ZeroGPU hardware, which requires the Gradio SDK.
 No GPU is used - the LLM runs on Groq's servers and DuckDB is CPU-only.
 """
 import os
