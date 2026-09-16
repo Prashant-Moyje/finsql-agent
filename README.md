@@ -27,9 +27,9 @@ The whole stack runs on free tiers: DuckDB or a Snowflake trial, Groq's free API
 
 ## Screenshots
 
-Captured from the real app by [`scripts/capture_screenshots.py`](scripts/capture_screenshots.py) driving headless Chrome, so they stay reproducible rather than hand-made.
+Captured from the [live Hugging Face Space](https://huggingface.co/spaces/Prashantm99/finsql-agent) by [`scripts/capture_screenshots.py`](scripts/capture_screenshots.py) driving headless Chrome, so they stay reproducible rather than hand-made.
 
-**The app.** The sidebar keeps the core problem in view: 610 tables and 8,079 columns, about 48,975 tokens of schema, far more than fits in a prompt.
+**The app.** The warehouse summary states the core problem up front: 610 tables and 8,079 columns, about 48,975 tokens of schema, far more than fits in a prompt.
 
 [![FinSQL landing page](docs/screenshots/01-landing.png)](docs/screenshots/01-landing.png)
 
@@ -37,9 +37,9 @@ Captured from the real app by [`scripts/capture_screenshots.py`](scripts/capture
 
 [![An answered question with report, metrics and result table](docs/screenshots/02-answer.png)](docs/screenshots/02-answer.png)
 
-**The SQL, and the trace that produced it.** Every answer shows the validated, row-limited SQL alongside the retrieval and repair trace. How the literals get there: [grounding](#grounding-stopping-the-llm-from-inventing-tables-and-columns).
+**The SQL that ran.** Every answer shows the validated, row-limited SQL, with the retrieval and repair trace in the panel below it. How the literals get there: [grounding](#grounding-stopping-the-llm-from-inventing-tables-and-columns).
 
-[![The generated SQL and the agent trace](docs/screenshots/03-sql-and-trace.png)](docs/screenshots/03-sql-and-trace.png)
+[![The validated SQL that ran](docs/screenshots/03-sql-and-trace.png)](docs/screenshots/03-sql-and-trace.png)
 
 **A destructive request, declined.** "Delete all the void invoices" never becomes SQL; here the writer asks what the user actually wants (status `clarify`). Had it written a DELETE, each security layer would stop it independently: [security](#security-preventing-destructive-commands).
 

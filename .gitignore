@@ -11,3 +11,6 @@ context_store/
 .aws-sam/
 build/
 eval/results.json
+
+# capture_screenshots.py debug output
+docs/screenshots/_debug-*.png

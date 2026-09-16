@@ -17,13 +17,15 @@ from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "screenshots"
 WIDTH, HEIGHT = 1500, 2400
 
-ANSWER_EXAMPLE = "Which departments were over budget"
-GUARDRAIL_EXAMPLE = "Delete all the void invoices"
+ANSWER_QUESTION = "Which departments were over budget last quarter, and by how much?"
+GUARDRAIL_QUESTION = "Delete all the void invoices"
+DEBUG = Path(__file__).resolve().parent.parent / "docs" / "screenshots" / "_debug-timeout.png"
 
 
 def wait_for(fn, timeout: float, what: str):
@@ -61,14 +63,28 @@ class Space:
         time.sleep(1)
 
     def meta(self) -> str:
-        els = self.d.find_elements(By.XPATH, "//*[contains(text(), 'schema tokens sent')]")
+        # contains(., ...) not contains(text(), ...): the status line is split into
+        # several text nodes by its bold parts, and text() only checks the first.
+        els = self.d.find_elements(By.XPATH, "//p[contains(., 'schema tokens sent')]")
         return els[0].text if els else ""
 
-    def ask_example(self, prefix: str, timeout: float = 180) -> None:
+    def ask(self, question: str, timeout: float = 180) -> None:
         before = self.meta()
-        self.click(prefix)      # fills the question box
-        self.click("Ask")
-        wait_for(lambda: self.meta() and self.meta() != before, timeout, "the agent to answer")
+        box = self.d.find_element(By.TAG_NAME, "textarea")
+        self.d.execute_script("arguments[0].scrollIntoView({block: 'center'});", box)
+        box.click()
+        box.send_keys(Keys.CONTROL, "a")
+        box.send_keys(Keys.BACKSPACE)
+        box.send_keys(question)
+        time.sleep(0.5)
+        self.button("Ask").click()
+        try:
+            wait_for(lambda: self.meta() and self.meta() != before, timeout, "the agent to answer")
+        except TimeoutError:
+            self.d.switch_to.default_content()
+            self.d.save_screenshot(str(DEBUG))
+            print(f"  timed out; page state saved to {DEBUG}")
+            raise
         time.sleep(3)
 
     def content_bottom(self) -> int:
@@ -107,14 +123,14 @@ def main() -> None:
         print("capturing:")
         space.shot("01-landing.png")
 
-        space.ask_example(ANSWER_EXAMPLE)
+        space.ask(ANSWER_QUESTION)
         space.shot("02-answer.png")
 
         space.click("SQL that ran")
         space.shot("03-sql-and-trace.png")
         space.click("SQL that ran")          # collapse again before the next question
 
-        space.ask_example(GUARDRAIL_EXAMPLE)
+        space.ask(GUARDRAIL_QUESTION)
         space.shot("04-guardrail.png")
     finally:
         driver.quit()
