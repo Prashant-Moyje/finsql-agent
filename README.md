@@ -5,6 +5,7 @@ Ask a finance question in Slack, get a plain-English report with the SQL and a C
 **Live demo:** [huggingface.co/spaces/Prashantm99/finsql-agent](https://huggingface.co/spaces/Prashantm99/finsql-agent) — ask it a question against the synthetic 610-table warehouse. It runs on a shared free Groq quota (8 questions per session), so it can run out on a busy day.
 
 **Status.** The local path (DuckDB + Groq or Ollama, CLI, Streamlit app, eval) is tested end to end and reproducible. The Snowflake connector, the SAM/Lambda deployment and the S3 catalog path are written against documented APIs but have **not** been run against live Snowflake or AWS accounts. Sections below flag which is which.
+
 [Architecture](#architecture) · [Grounding](#grounding-stopping-the-llm-from-inventing-tables-and-columns) · [Security](#security-preventing-destructive-commands) · [Schema retrieval](#schema-retrieval-fitting-a-610-table-warehouse-into-a-prompt) · [Evaluation](#evaluation) · [Limitations](#limitations) · [Run it](#running-it) · [Deploy](#deployment-slack--aws-lambda)
 
 ---
